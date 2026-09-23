@@ -1,0 +1,28 @@
+
+
+services:
+  postgres_poe:
+    image: postgres:15
+    container_name: poe_market_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: poe_admin
+      POSTGRES_PASSWORD: poe_password
+      POSTGRES_DB: poe_market
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./poe_db_data:/var/lib/postgresql/data
+    # Tuning pod potężny wolumen danych (host 32 GB RAM):
+    command: >
+      postgres
+      -c shared_buffers=6GB
+      -c work_mem=256MB
+      -c maintenance_work_mem=2GB
+      -c effective_cache_size=16GB
+      -c max_wal_size=10GB
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=64MB
+      -c max_worker_processes=16
+      -c max_parallel_workers_per_gather=8
+      -c max_parallel_workers=16

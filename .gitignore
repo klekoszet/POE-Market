@@ -1,0 +1,19 @@
+# Data directories (huge raw data & database storage)
+ninjadata/
+poe_db_data/
+postgresPOE/
+processed_data/
+profiling_reports/
+scratch/
+scratch_pbix/
+
+# Python virtual environment & cache
+.venv/
+__pycache__/
+*.pyc
+
+# System / IDE
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
