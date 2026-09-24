@@ -1,7 +1,6 @@
 -- ====================================================================================================
 -- PROJEKT: Hurtownia Danych i Analityka Rynku Path of Exile (poe.ninja)
 -- PLIK:    poe_market_dwh_pipeline.sql
--- AUTOR:   Łukasz
 -- OPIS:    Kompleksowy skrypt ETL / DWH w PostgreSQL przekształcający surowe zrzuty poe.ninja (110M+ wierszy)
 --          w wydajny, zoptymalizowany schemat gwiazdy (Star Schema) z widokami analitycznymi dla Power BI.
 -- ====================================================================================================
@@ -71,9 +70,6 @@ CREATE TABLE IF NOT EXISTS items (
 -------------------------------------------------------------------------------------------------------
 -- 3.1. WYMIAR KALENDARZOWY (dim_date)
 -------------------------------------------------------------------------------------------------------
--- Rola: Umożliwia analizę cyklicznych zachowań graczy (np. skoki cen walut w piątki/soboty, gdy rośnie
--- liczba aktywnych graczy na mapach, a w tygodniu następuje stabilizacja).
--------------------------------------------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS dim_date (
     date_key TIMESTAMP WITH TIME ZONE PRIMARY KEY,
@@ -122,7 +118,7 @@ CREATE TABLE dim_league (
     is_trade_challenge BOOLEAN
 );
 
--- Zasilenie słownika metadanymi chronologicznymi lig wyzwań
+-- Zasilenie słownika metadanymi chronologicznymi lig
 WITH league_meta (base_league, start_date, end_date, release_version) AS (
     VALUES
         ('Essence',     '2016-09-02'::date, '2016-11-28'::date, '2.4.0'),
@@ -393,7 +389,7 @@ CREATE INDEX idx_fct_league   ON fact_item_prices (league_key);
 
 
 -- ====================================================================================================
--- SEKCJA 5: WARSTWA WIDOKÓW ANALITYCZNYCH (DATA MARTS DLA POWER BI)
+-- SEKCJA 5: WARSTWA WIDOKÓW ANALITYCZNYCH
 -- ====================================================================================================
 
 -------------------------------------------------------------------------------------------------------
@@ -453,7 +449,7 @@ WHERE fc.pay = 'Chaos Orb';
 -- 5.2. WIDOK RYNKU UNIKATÓW TIER 0 I TIER 1 (v_fact_chase_items_daily)
 -- Rola: Zamiast obciążać Power BI 110 milionami wierszy przez DirectQuery, ten widok wyciąga tylko
 -- kluczowe unikatowe przedmioty rynkowe (~200k wierszy w historii, ~60k dla lig trade).
--- Może być załadowany do Power BI w trybie IMPORT w 1 sekundę (< 5 MB RAM).
+-- Może być załadowany do Power BI w trybie IMPORT.
 -------------------------------------------------------------------------------------------------------
 
 CREATE OR REPLACE VIEW v_fact_chase_items_daily AS
@@ -510,8 +506,8 @@ WHERE di.item_tier IN ('Tier 0 (Chase)', 'Tier 1 (High)', 'Tier 2 (Meta)');
 -------------------------------------------------------------------------------------------------------
 -- 5.3. WIDOK BENCHMARKINGU DNIA LIGI (v_benchmark_day_of_league)
 -- Rola: Narzędzie wspomagania decyzji w trakcie trwania nowej ligi.
--- Oblicza statystyki rozkładu cen (Min, Avg, Max) dla każdego relatywnego dnia ligi (Dzień 1 do 120).
--- [ZMIANA]: Dodano kolumnę 'market_basket', która dzieli przedmioty na koszyki skali (Apex, Standard, Chase, Meta),
+-- Oblicza statystyki rozkładu cen (Min, Avg, Max) dla każdego relatywnego dnia ligi.
+-- Kolumna 'market_basket', dzieli przedmioty na koszyki skali (Apex, Standard, Chase, Meta),
 -- dzięki czemu Mirror i Divine nie zniekształcają wzajemnie skali na jednym wykresie.
 -------------------------------------------------------------------------------------------------------
 
@@ -569,7 +565,7 @@ SELECT * FROM item_bench;
 
 
 -------------------------------------------------------------------------------------------------------
--- 5.4. WIDOK KALKULATORA ROI WCZESNEJ LIGI (v_early_league_roi) [NOWY WIDOK]
+-- 5.4. WIDOK KALKULATORA ROI WCZESNEJ LIGI (v_early_league_roi)
 -- Rola: Zaawansowana matryca zwrotu z inwestycji (ROI).
 -- Porównuje zakup aktywów w Dniu 3 (wczesna faza) ze sprzedażą w Dniu 7, 14 i 28.
 -- Wylicza ROI % zarówno w Divinach, jak i w Chaosach dla kluczowych walut i unikatów.
@@ -654,10 +650,9 @@ WHERE pv.p3_chaos IS NOT NULL;
 
 
 -------------------------------------------------------------------------------------------------------
--- 5.5. WIDOK AKTYWÓW INWESTYCYJNYCH (v_fact_investment_assets_daily) [NOWY WIDOK]
+-- 5.5. WIDOK AKTYWÓW INWESTYCYJNYCH (v_fact_investment_assets_daily)
 -- Rola: Łączy kluczowe waluty inwestycyjne (Mirror Shard, Annulment, Hinekora, Sextants itp.) 
 -- oraz unikatowe przedmioty Chase/Meta w jedną zunifikowaną strukturę.
--- Zasilacz dynamicznego symulatora What-If ROI w Power BI (Strona 5).
 -------------------------------------------------------------------------------------------------------
 
 CREATE OR REPLACE VIEW v_fact_investment_assets_daily AS
@@ -698,23 +693,3 @@ SELECT
     fi.value_divine
 FROM v_fact_chase_items_daily fi
 WHERE fi.is_canonical AND fi.is_trade_challenge AND fi.day_of_league <= 120;
-
-
--- ====================================================================================================
--- SEKCJA 6: PRZYKŁADOWE ZAPYTANIA ANALITYCZNE I WERYFIKACYJNE
--- ====================================================================================================
-
--- 1. Kurs Mirror of Kalandra w Divinach w kluczowych momentach ligi Settlers (3.25)
--- SELECT league_name, day_of_league, price_chaos, divine_rate_chaos, price_divine
--- FROM v_fact_currency_daily
--- WHERE league_name = 'Settlers' AND currency_name = 'Mirror of Kalandra' AND day_of_league IN (3, 7, 14, 30, 60);
-
--- 2. Porównanie relacji ceny Headhunter vs Mageblood w lidze Affliction (3.23) z powodu inflacji
--- SELECT league_name, item_name, day_of_league, value_divine
--- FROM v_fact_chase_items_daily
--- WHERE league_name = 'Affliction' AND item_name IN ('Mageblood', 'Headhunter') AND day_of_league IN (7, 14, 30, 60) AND is_canonical;
-
--- 3. Sprawdzenie benchmarku cenowego dla Dnia 10 w nowoczesnej erze Divine (3.19+)
--- SELECT entity_name, entity_type, avg_chaos, min_chaos, max_chaos, avg_divine
--- FROM v_benchmark_day_of_league
--- WHERE league_era = 'Divine Era (3.19+)' AND day_of_league = 10;
